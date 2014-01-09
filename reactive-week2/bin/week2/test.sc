@@ -8,7 +8,7 @@ object test {
                                                   //| in2  : week2.test.sim.Wire = week2.Gates$Wire@6eccec5f
                                                   //| sum  : week2.test.sim.Wire = week2.Gates$Wire@4fb289cd
                                                   //| carry  : week2.test.sim.Wire = week2.Gates$Wire@52751a9b
-                  
+
   halfAdder(in1, in2, sum, carry)
   probe("sum", sum)                               //> sum 0 new-value = false
   probe("carry", carry)                           //> carry 0 new-value = false

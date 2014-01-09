@@ -4,5 +4,6 @@ object week2 {
   
   case class Event(time:Int)
   
-  val e = Event(2)                                //> e  : week2.Event = Event(2)
+  val e = (x:Int)=>{1+x}                          //> e  : Int => Int = <function1>
+	e(3)                                      //> res1: Int = 4
 }

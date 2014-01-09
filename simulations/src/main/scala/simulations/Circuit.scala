@@ -7,7 +7,7 @@ class Wire {
   private var actions: List[Simulator#Action] = List()
 
   def getSignal: Boolean = sigVal
-  
+
   def setSignal(s: Boolean) {
     if (s != sigVal) {
       sigVal = s
@@ -29,10 +29,11 @@ abstract class CircuitSimulator extends Simulator {
 
   def probe(name: String, wire: Wire) {
     wire addAction {
-      () => afterDelay(0) {
-        println(
-          "  " + currentTime + ": " + name + " -> " +  wire.getSignal)
-      }
+      () =>
+        afterDelay(0) {
+          println(
+            "  " + currentTime + ": " + name + " -> " + wire.getSignal)
+        }
     }
   }
 
@@ -59,15 +60,36 @@ abstract class CircuitSimulator extends Simulator {
   //
 
   def orGate(a1: Wire, a2: Wire, output: Wire) {
-    ???
+    def orAction() {
+      val a1Sig = a1.getSignal
+      val a2Sig = a2.getSignal
+      afterDelay(OrGateDelay) { output.setSignal(a1Sig | a2Sig) }
+    }
+    a1 addAction orAction
+    a2 addAction orAction
   }
-  
+
   def orGate2(a1: Wire, a2: Wire, output: Wire) {
-    ???
+    val notIn1, notIn2, notOut = new Wire
+    
+    inverter(a1, notIn1)
+    inverter(a2, notIn2)
+    andGate(notIn1, notIn2, notOut)
+    inverter(notOut, output)
   }
 
   def demux(in: Wire, c: List[Wire], out: List[Wire]) {
-    ???
+    if(c.isEmpty) {
+      out.head.setSignal(in.getSignal)
+    } else {
+      val selectIn1, notCOut, selectIn0 = new Wire
+      
+      andGate(in, c.head, selectIn1)
+      demux(selectIn1, c.tail, out.take(out.length / 2))
+      inverter(c.head, notCOut)
+      andGate(in, notCOut, selectIn0)
+      demux(selectIn0, c.tail, out.takeRight(out.length / 2))
+    }
   }
 
 }
