@@ -19,6 +19,7 @@ class Wire {
     actions = a :: actions
     a()
   }
+  override def toString() = getSignal.toString
 }
 
 abstract class CircuitSimulator extends Simulator {
@@ -80,14 +81,17 @@ abstract class CircuitSimulator extends Simulator {
 
   def demux(in: Wire, c: List[Wire], out: List[Wire]) {
     if(c.isEmpty) {
-      out.head.setSignal(in.getSignal)
+      val invertIn = new Wire
+      //Can't do setSignal directly since that will cause wrong sequence of action execution
+      inverter(in, invertIn)
+      inverter(invertIn, out.head)
     } else {
-      val selectIn1, notCOut, selectIn0 = new Wire
+      val selectIn1, invertC, selectIn0 = new Wire
       
       andGate(in, c.head, selectIn1)
       demux(selectIn1, c.tail, out.take(out.length / 2))
-      inverter(c.head, notCOut)
-      andGate(in, notCOut, selectIn0)
+      inverter(c.head, invertC)
+      andGate(in, invertC, selectIn0)
       demux(selectIn0, c.tail, out.takeRight(out.length / 2))
     }
   }
