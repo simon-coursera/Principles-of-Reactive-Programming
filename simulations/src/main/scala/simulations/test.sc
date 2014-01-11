@@ -1,30 +1,38 @@
 package simulations
 
+import gui._
+
 object test {
 
-  class TestSuite extends CircuitSimulator {
-    val InverterDelay = 1
-    val AndGateDelay = 3
-    val OrGateDelay = 5
-  }
+  val es = new EpidemySimulator                   //> es  : simulations.EpidemySimulator = simulations.EpidemySimulator@73d0a8dc
+  es.persons.foreach(p => {
+    p.infected = false
+    p.sick = false
+    p.dead = false
+    p.row = 50
+    p.col = 50
+  })
 
-  val test = new TestSuite                        //> test  : simulations.test.TestSuite = simulations.test$TestSuite@7fe4e47f
-  import test._
+  es.persons(0).row = 0
+  es.persons(0).col = 1
+  es.persons(0).sick = true
+ 
+  es.persons(1).row = 1
+  es.persons(1).col = 0
+  es.persons(1).dead = true
 
-  val in = new Wire                               //> in  : simulations.Wire = false
-  val c = List(new Wire, new Wire, new Wire )     //> c  : List[simulations.Wire] = List(false, false, false)
-  val out = List(new Wire, new Wire, new Wire, new Wire,
-  							new Wire, new Wire, new Wire, new Wire)
-                                                  //> out  : List[simulations.Wire] = List(false, false, false, false, false, fals
-                                                  //| e, false, false)
-	
-  demux(in, c, out)
-  in.setSignal(true)
-  out(0) setSignal true
-  out(1) setSignal true
-  run                                             //> *** New propagation ***
+  es.persons(2).row = 2
+  es.persons(2).col = 1
+  es.persons(2).sick = true
 
-import math.random
-	  (random * 1).toInt                      //> res0: Int = 0
+  es.persons(3).row = 1
+  es.persons(3).col = 2
+  es.persons(3).dead = true
+
+  es.persons(4).row = 1
+  es.persons(4).col = 1
+
+  es.persons(4).move
+
 }
   

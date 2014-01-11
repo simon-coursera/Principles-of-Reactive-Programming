@@ -6,7 +6,7 @@ import javax.swing.border.{EmptyBorder}
 import java.awt.{Graphics, Graphics2D, GridLayout, BorderLayout, Color, Dimension, Rectangle, Polygon}
 import java.awt.event.{ActionListener, ActionEvent}
 
-object EpidemyDisplay extends EpidemySimulator with App {
+object EpidemyDisplay extends EpidemySimulator2 with App {
 
   class Situation(var healthy: Int, var sick: Int, var immune: Int) {
     def reset { healthy = 0; sick = 0; immune = 0 }
