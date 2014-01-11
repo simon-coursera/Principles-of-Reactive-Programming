@@ -8,7 +8,7 @@ object test {
     val OrGateDelay = 5
   }
 
-  val test = new TestSuite                        //> test  : simulations.test.TestSuite = simulations.test$TestSuite@5ba07a6f
+  val test = new TestSuite                        //> test  : simulations.test.TestSuite = simulations.test$TestSuite@7fe4e47f
   import test._
 
   val in = new Wire                               //> in  : simulations.Wire = false
@@ -24,10 +24,7 @@ object test {
   out(1) setSignal true
   run                                             //> *** New propagation ***
 
-	in                                        //> res0: simulations.Wire = true
-	c                                         //> res1: List[simulations.Wire] = List(false, false, false)
-	out                                       //> res2: List[simulations.Wire] = List(false, false, false, false, false, false
-                                                  //| , false, true)
-	
+import math.random
+	  (random * 1).toInt                      //> res0: Int = 0
 }
   
