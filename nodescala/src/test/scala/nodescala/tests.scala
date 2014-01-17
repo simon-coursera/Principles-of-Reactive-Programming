@@ -1,14 +1,12 @@
 package nodescala
 
-
-
 import scala.language.postfixOps
-import scala.util.{Try, Success, Failure}
+import scala.util.{ Try, Success, Failure }
 import scala.collection._
 import scala.concurrent._
 import ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.async.Async.{async, await}
+import scala.async.Async.{ async, await }
 import org.scalatest._
 import NodeScala._
 import org.junit.runner.RunWith
@@ -32,6 +30,20 @@ class NodeScalaSuite extends FunSuite {
     } catch {
       case t: TimeoutException => // ok!
     }
+  }
+
+  test("Future all good should return all results") {
+    val all = Future.all(List(Future{1}, Future{2}, Future{3}))
+    val ret = Await.result(all, 1 second)
+    println(ret)
+    assert(ret == List(1,2,3))
+  }
+  
+  test("Future all with some bad  should return bad results") {
+    val all = Future.all(List(Future{1}, Future{2}, Future{new Error("bad")}))
+    val ret = Await.result(all, 1 second)
+    println(ret)
+    assert(ret == List(1,2,3))
   }
 
   test("CancellationTokenSource should allow stopping the computation") {
