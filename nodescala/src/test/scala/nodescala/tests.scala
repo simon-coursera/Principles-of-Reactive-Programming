@@ -33,45 +33,44 @@ class NodeScalaSuite extends FunSuite {
   }
 
   test("Future all good should return all results") {
-    val all = Future.all(List(Future{1}, Future{2}, Future{3}, Future{4}))
+    val all = Future.all(List(Future { 1 }, Future { 2 }, Future { 3 }, Future { 4 }))
     val ret = Await.result(all, 1 second)
-    assert(ret == List(1,2,3,4))
+    assert(ret == List(1, 2, 3, 4))
   }
-  
+
   test("Future all with some bad  should return bad results") {
-    val all = Future.all(List(Future{1}, Future{2}, Future{3}, Future{throw new Exception}))
-   
+    val all = Future.all(List(Future { 1 }, Future { 2 }, Future { 3 }, Future { throw new Exception }))
+
     val ret = Try(Await.result(all, 1 second))
-   
-    assert( ret.isFailure)
+
+    assert(ret.isFailure)
   }
-  
+
   test("Test delay and then trying to do now should failre") {
     val f = Future.delay(10 second)
-    
-    val ret = Try{f.now}
-   
-    assert( ret.isFailure)
-  
+
+    val ret = Try { f.now }
+
+    assert(ret.isFailure)
+
     val f1 = Future.always(1)
     //println("result:" + f1.now)
     assert(f1.now == 1)
   }
-  
+
   test("Test always and now should get the value") {
     assert(Future.always(1).now === 1)
   }
-  
+
   test("Test continue always get the value") {
     val f = Future.always(1).continue({
       case Success(t) => t * 2
       case Failure(e) => e
     })
-    
+
     val ret = Await.result(f, 1 second)
     assert(ret === 2)
   }
-
 
   test("CancellationTokenSource should allow stopping the computation") {
     val cts = CancellationTokenSource()
@@ -149,6 +148,30 @@ class NodeScalaSuite extends FunSuite {
     }
   }
 
+  test("Server should serve requests") {
+    val dummy = new DummyServer(8191)
+    val dummySubscription = dummy.start("/testDir") {
+      request => for (kv <- request.iterator) yield (kv + "\n").toString
+    }
+
+    // wait until server is really installed
+    Thread.sleep(500)
+
+    def test(req: Request) {
+      val webpage = dummy.emit("/testDir", req)
+      val content = Await.result(webpage.loaded.future, 1 second)
+      println("content:" + content)
+      val expected = (for (kv <- req.iterator) yield (kv + "\n").toString).mkString
+      assert(content == expected, s"'$content' vs. '$expected'")
+    }
+
+    test(immutable.Map("StrangeRequest" -> List("Does it work?")))
+    test(immutable.Map("StrangeRequest" -> List("It works!")))
+    test(immutable.Map("WorksForThree" -> List("Always works. Trust me.")))
+
+    dummySubscription.unsubscribe()
+  }
+
   test("Listener should serve the next request as a future") {
     val dummy = new DummyListener(8191, "/test")
     val subscription = dummy.start()
@@ -167,28 +190,6 @@ class NodeScalaSuite extends FunSuite {
     subscription.unsubscribe()
   }
 
-  test("Server should serve requests") {
-    val dummy = new DummyServer(8191)
-    val dummySubscription = dummy.start("/testDir") {
-      request => for (kv <- request.iterator) yield (kv + "\n").toString
-    }
-
-    // wait until server is really installed
-    Thread.sleep(500)
-
-    def test(req: Request) {
-      val webpage = dummy.emit("/testDir", req)
-      val content = Await.result(webpage.loaded.future, 1 second)
-      val expected = (for (kv <- req.iterator) yield (kv + "\n").toString).mkString
-      assert(content == expected, s"'$content' vs. '$expected'")
-    }
-
-    test(immutable.Map("StrangeRequest" -> List("Does it work?")))
-    test(immutable.Map("StrangeRequest" -> List("It works!")))
-    test(immutable.Map("WorksForThree" -> List("Always works. Trust me.")))
-
-    dummySubscription.unsubscribe()
-  }
 
 }
 
