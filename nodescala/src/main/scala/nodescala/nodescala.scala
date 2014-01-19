@@ -50,8 +50,7 @@ trait NodeScala {
    */
   def start(relativePath: String)(handler: Request => Response): Subscription = {
     val listener = createListener(relativePath)
-
-    val subscription = listener.start
+    val lSub = listener.start
     
     Future.run() { ct =>
       Future {
@@ -60,7 +59,7 @@ trait NodeScala {
             case (req, exc) => Future { respond(exc, ct, handler(req)) }
           }
         }     
-        subscription.unsubscribe
+        lSub.unsubscribe
         println("Done!")
       }
     }
