@@ -33,18 +33,45 @@ class NodeScalaSuite extends FunSuite {
   }
 
   test("Future all good should return all results") {
-    val all = Future.all(List(Future{1}, Future{2}, Future{3}))
+    val all = Future.all(List(Future{1}, Future{2}, Future{3}, Future{4}))
     val ret = Await.result(all, 1 second)
-    println(ret)
-    assert(ret == List(1,2,3))
+    assert(ret == List(1,2,3,4))
   }
   
   test("Future all with some bad  should return bad results") {
-    val all = Future.all(List(Future{1}, Future{2}, Future{new Error("bad")}))
-    val ret = Await.result(all, 1 second)
-    println(ret)
-    assert(ret == List(1,2,3))
+    val all = Future.all(List(Future{1}, Future{2}, Future{3}, Future{throw new Exception}))
+   
+    val ret = Try(Await.result(all, 1 second))
+   
+    assert( ret.isFailure)
   }
+  
+  test("Test delay and then trying to do now should failre") {
+    val f = Future.delay(10 second)
+    
+    val ret = Try{f.now}
+   
+    assert( ret.isFailure)
+  
+    val f1 = Future.always(1)
+    //println("result:" + f1.now)
+    assert(f1.now == 1)
+  }
+  
+  test("Test always and now should get the value") {
+    assert(Future.always(1).now === 1)
+  }
+  
+  test("Test continue always get the value") {
+    val f = Future.always(1).continue({
+      case Success(t) => t * 2
+      case Failure(e) => e
+    })
+    
+    val ret = Await.result(f, 1 second)
+    assert(ret === 2)
+  }
+
 
   test("CancellationTokenSource should allow stopping the computation") {
     val cts = CancellationTokenSource()
