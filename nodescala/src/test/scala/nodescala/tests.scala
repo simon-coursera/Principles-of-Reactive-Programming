@@ -1,14 +1,12 @@
 package nodescala
 
-
-
 import scala.language.postfixOps
-import scala.util.{Try, Success, Failure}
+import scala.util.{ Try, Success, Failure }
 import scala.collection._
 import scala.concurrent._
 import ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.async.Async.{async, await}
+import scala.async.Async.{ async, await }
 import org.scalatest._
 import NodeScala._
 import org.junit.runner.RunWith
@@ -33,6 +31,47 @@ class NodeScalaSuite extends FunSuite {
       case t: TimeoutException => // ok!
     }
   }
+
+  test("Future all good should return all results") {
+    val all = Future.all(List(Future{1}, Future{2}, Future{3}, Future{4}))
+    val ret = Await.result(all, 1 second)
+    assert(ret == List(1,2,3,4))
+  }
+  
+  test("Future all with some bad  should return bad results") {
+    val all = Future.all(List(Future{1}, Future{2}, Future{3}, Future{throw new Exception}))
+   
+    val ret = Try(Await.result(all, 1 second))
+   
+    assert( ret.isFailure)
+  }
+  
+  test("Test delay and then trying to do now should failre") {
+    val f = Future.delay(10 second)
+    
+    val ret = Try{f.now}
+   
+    assert( ret.isFailure)
+  
+    val f1 = Future.always(1)
+    //println("result:" + f1.now)
+    assert(f1.now == 1)
+  }
+  
+  test("Test always and now should get the value") {
+    assert(Future.always(1).now === 1)
+  }
+  
+  test("Test continue always get the value") {
+    val f = Future.always(1).continue({
+      case Success(t) => t * 2
+      case Failure(e) => e
+    })
+    
+    val ret = Await.result(f, 1 second)
+    assert(ret === 2)
+  }
+
 
   test("CancellationTokenSource should allow stopping the computation") {
     val cts = CancellationTokenSource()
