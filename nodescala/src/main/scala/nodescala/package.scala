@@ -106,6 +106,7 @@ package object nodescala {
       f.value match {
         case Some(Success(t)) => t
         case Some(Failure(e)) => throw e
+        case None => throw new NoSuchElementException
       }
     }
 

@@ -21,7 +21,7 @@ object Main {
     // 2. create a future that expects some user input `x`
     //    and continues with a `"You entered... " + x` message
     val userInterrupted: Future[String] =
-      for(x <- Future.userInput("Please enter:")) yield s"You entered...$x"
+      for(x <- Future.userInput("Enter Anykey to Exit")) yield {s"You entered...$x"}
 
 
     // TO IMPLEMENT

@@ -159,8 +159,8 @@ class NodeScalaSuite extends FunSuite {
 
     def test(req: Request) {
       val webpage = dummy.emit("/testDir", req)
-      val content = Await.result(webpage.loaded.future, 1 second)
-      println("content:" + content)
+      val content = Await.result(webpage.loaded.future, 10000 second)
+      //println("content:" + content)
       val expected = (for (kv <- req.iterator) yield (kv + "\n").toString).mkString
       assert(content == expected, s"'$content' vs. '$expected'")
     }
@@ -189,7 +189,6 @@ class NodeScalaSuite extends FunSuite {
 
     subscription.unsubscribe()
   }
-
 
 }
 
