@@ -11,6 +11,7 @@ import scala.swing.Reactions.Reaction
 import scala.swing.event.Event
 import rx.lang.scala.Observable
 import rx.lang.scala.subscriptions.Subscription
+import rx.lang.scala.Subscription
 import rx.lang.scala._
 import rx.lang.scala.subscriptions._
 
@@ -56,9 +57,12 @@ trait SwingApi {
      * @param field the text field
      * @return an observable with a stream of text field updates
      */
-    def textValues: Observable[String] = 
+    def textValues: Observable[String] =
       Observable(observer ⇒ {
-        //observer.onNext()
+        field.subscribe {
+          case ValueChanged(tf) => observer.onNext(tf.text)
+        }
+        //subscribe(observer)
         Subscription {}
       })
   }
@@ -71,8 +75,13 @@ trait SwingApi {
      * @param field the button
      * @return an observable with a stream of buttons that have been clicked
      */
-    def clicks: Observable[Button] = ???
-
+    def clicks: Observable[Button] =
+      Observable(observer ⇒ {
+        button.subscribe {
+          case ButtonClicked(tf) => observer.onNext(button)
+        }
+        //subscribe(observer)
+        Subscription {}
+      })
   }
-
 }
