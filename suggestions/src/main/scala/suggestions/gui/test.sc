@@ -10,9 +10,8 @@ import rx.lang.scala.Observable
 import suggestions.gui._
 
 object week4 {
-  println("Welcome to the Scala worksheet")
-  "Eric Ji".replace(' ', '_')
+  println("Welcome to the Scala worksheet")       //> Welcome to the Scala worksheet
+  "Eric Ji".replace(' ', '_')                     //> res0: String = Eric_Ji
   
  // Observable.interval(1 seconds).take(3).subscribe(println(_))
-  Observable(1, 2, 3).concatRecovered(num => Observable(num, num, num))
 }
