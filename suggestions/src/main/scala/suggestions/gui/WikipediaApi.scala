@@ -55,11 +55,10 @@ trait WikipediaApi {
      *
      * E.g. `1, 2, 3, !Exception!` should become `Success(1), Success(2), Success(3), Failure(Exception), !TerminateStream!`
      */
-    def recovered: Observable[Try[T]] = obs.materialize.map({
+    def recovered: Observable[Try[T]] = obs.materialize.filter {!_.isInstanceOf[OnCompleted[T]]} map{
       case OnNext(t) => Success(t)
       case OnError(t) => Failure(t)
-      //case OnCompleted =>
-    })
+    }
 
     /**
      * Emits the events from the `obs` observable, until `totalSec` seconds have elapsed.
