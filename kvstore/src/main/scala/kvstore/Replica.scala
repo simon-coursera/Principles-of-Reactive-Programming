@@ -12,6 +12,7 @@ import akka.actor.PoisonPill
 import akka.actor.OneForOneStrategy
 import akka.actor.SupervisorStrategy
 import akka.util.Timeout
+import akka.actor.Cancellable
 
 object Replica {
   sealed trait Operation {
@@ -31,6 +32,8 @@ object Replica {
   case class ReplicateFailed(receiver: ActorRef, key: String, id: Long)
 
   case class ReplicatorsMessage(receiver: ActorRef, key: String, replicators: Set[ActorRef], starttime: Long)
+
+  case object Check
 
   def props(arbiter: ActorRef, persistenceProps: Props): Props = Props(new Replica(arbiter, persistenceProps))
 }
@@ -68,30 +71,52 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
     case _: Exception => Restart
   }
 
-  context.system.scheduler.scheduleOnce(100.milliseconds, self, Resend)
-
   /* TODO Behavior for  the leader role. */
   val leader: Receive = {
     case Replicas(replicas: Set[ActorRef]) => {
       replicas.foreach(replica => {
-        if (!secondaries.contains(replica)) {
+        if (replica != self && !secondaries.contains(replica)) {
           val newReplicator = context.actorOf(Replicator.props(replica))
           secondaries += (replica -> newReplicator)
           replicators += newReplicator
+
+          replicateNew(newReplicator)
         }
       })
+
+      if (replicas.size - 1 < secondaries.size) {
+        //Handle replica has been removed case
+        val removedReplicators = secondaries.filter(m => !replicas.contains(m._1)).map(m => m._2).toSet
+        
+        //Wave ack message from removed replicators
+        replicateAcks = replicateAcks.map(a =>{
+        	val id = a._1
+        	val replicators = a._2.replicators.filter(r => !removedReplicators.contains(r))
+        	if(replicators.size == 0 && !persistAcks.contains(id)) {
+        	  a._2.receiver ! OperationAck(id)
+        	}
+        	(id -> ReplicatorsMessage(a._2.receiver, a._2.key, replicators, a._2.starttime))
+        })
+        
+        replicateAcks = replicateAcks.filter(a => a._2.replicators.size > 0)
+        if (persistAcks.size == 0 && replicateAcks.size == 0) stopCheckerScheduler
+        
+        removedReplicators.foreach(r => context.stop(r))
+        secondaries = secondaries.filter(m => !removedReplicators.contains(m._2))
+        replicators = secondaries.map(m => m._2).toSet
+      }
     }
     case Insert(key: String, value: String, id: Long) => {
       kv += key -> value
       doReplicate(key, Some(value), id)
       doPersist(key, Some(value), id)
-      //sender ! OperationAck(id)
+      startCheckerScheduler
     }
     case Remove(key: String, id: Long) => {
       kv -= key
       doReplicate(key, None, id)
       doPersist(key, None, id)
-      //sender ! OperationAck(id)
+      startCheckerScheduler
     }
     case Get(key: String, id: Long) => sender ! GetResult(key, GetValue(key), id)
     case Persisted(key: String, id: Long) => if (persistAcks.contains(id)) {
@@ -100,7 +125,7 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
 
       checkToConfirm(id, receiver)
     }
-    case Resend => doCleanUp
+    case Check => doCheck
     case ReplicateFailed(receiver: ActorRef, key: String, id: Long) => {
       persistAcks -= id
       replicateAcks -= id
@@ -123,11 +148,22 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
       replicators.foreach(replicator => {
         replicator ! Replicate(key, valueOption, id)
       })
-      replicateAcks += (id -> ReplicatorsMessage(sender,key, replicators, System.currentTimeMillis))
+      replicateAcks += (id -> ReplicatorsMessage(sender, key, replicators, System.currentTimeMillis))
     }
   }
 
-  def checkToConfirm(id: Long, receiver: ActorRef) = if (!replicateAcks.contains(id) && !persistAcks.contains(id)) receiver ! OperationAck(id)
+  def checkToConfirm(id: Long, receiver: ActorRef) = {
+    if (!replicateAcks.contains(id) && !persistAcks.contains(id)) receiver ! OperationAck(id)
+    if (persistAcks.size == 0 && replicateAcks.size == 0) stopCheckerScheduler
+  }
+
+  def replicateNew(replicator: ActorRef) = {
+    var id = 0L
+    kv.foreach(e => {
+      doReplicate(e._1, Some(e._2), id)
+      id += 1
+    })
+  }
 
   /* TODO Behavior for the replica role. */
   val replica: Receive = {
@@ -139,6 +175,7 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
           case None => kv -= key
         }
         doPersist(key, valueOption, seq)
+        startCheckerScheduler
 
         expected_seq += 1
       } else if (seq < expected_seq) {
@@ -148,8 +185,9 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
     case Persisted(key: String, id: Long) => if (persistAcks.contains(id)) {
       persistAcks(id).receiver ! SnapshotAck(persistAcks(id).key, id)
       persistAcks -= id
+      if (persistAcks.size == 0) stopCheckerScheduler
     }
-    case Resend => doCleanUp
+    case Check => doCheck
     case ReplicateFailed(receiver: ActorRef, key: String, id: Long) => None
   }
 
@@ -161,25 +199,35 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   }
 
   val TIMEOUT_MILLIS = 1000
-  
-  def doCleanUp = {
+  var scheduledChecker: Cancellable = null
+
+  def startCheckerScheduler =
+    if (scheduledChecker == null)
+      scheduledChecker = context.system.scheduler.scheduleOnce(100.milliseconds, self, Check)
+
+  def stopCheckerScheduler =
+    if (scheduledChecker != null) {
+      scheduledChecker.cancel
+      scheduledChecker = null
+    }
+
+  def doCheck = {
     val currentTime = System.currentTimeMillis
-    
+    scheduledChecker = null
     //Persistent resend
     persistAcks.foreach(a => {
       if (currentTime - a._2.starttime >= TIMEOUT_MILLIS) self ! ReplicateFailed(a._2.receiver, a._2.key, a._1)
       else persistor ! Persist(a._2.key, a._2.valueOption, a._1)
     })
-
     //Clean up long period persistent effort
-    persistAcks = persistAcks.filter(a => currentTime - a._2.starttime < 1000)
-    
+    persistAcks = persistAcks.filter(a => currentTime - a._2.starttime < TIMEOUT_MILLIS)
+
     //Cleanup non-responsive replication 
     replicateAcks.foreach(a => {
-      if(currentTime - a._2.starttime >= TIMEOUT_MILLIS) self ! ReplicateFailed(a._2.receiver, a._2.key, a._1)
+      if (currentTime - a._2.starttime >= TIMEOUT_MILLIS) self ! ReplicateFailed(a._2.receiver, a._2.key, a._1)
     })
-    replicateAcks = replicateAcks.filter(a => currentTime - a._2.starttime < 1000)
-    
-    context.system.scheduler.scheduleOnce(100.milliseconds, self, Resend)
+    replicateAcks = replicateAcks.filter(a => currentTime - a._2.starttime < TIMEOUT_MILLIS)
+
+    if (persistAcks.size > 0 || replicateAcks.size > 0) startCheckerScheduler
   }
 }

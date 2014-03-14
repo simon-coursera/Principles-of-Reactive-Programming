@@ -4,6 +4,7 @@ import akka.actor.Props
 import akka.actor.Actor
 import akka.actor.ActorRef
 import scala.concurrent.duration._
+import akka.actor.Cancellable
 
 object Replicator {
   case class Replicate(key: String, valueOption: Option[String], id: Long)
@@ -40,8 +41,7 @@ class Replicator(val replica: ActorRef) extends Actor {
   }
 
   /* TODO Behavior for the Replicator. */
-  context.system.scheduler.scheduleOnce(100.milliseconds, self, Resend)
-  
+
   def receive: Receive = {
     case Replicate(key, valueOption, id) => {
       //merge the replication on same key
@@ -58,7 +58,7 @@ class Replicator(val replica: ActorRef) extends Actor {
         seq = nextSeq
         pending = pending :+ Snapshot(key, valueOption, seq)
       }
-      
+
       acks += (seq -> (sender -> Replicate(key, valueOption, id)))
 
       self ! Send
@@ -67,22 +67,36 @@ class Replicator(val replica: ActorRef) extends Actor {
       if (acks.contains(seq)) {
         acks(seq)._1 ! Replicated(key, acks(seq)._2.id)
         acks -= seq
+        if (acks.size == 0) stopResendScheduler
       }
     }
     case Send => {
-    	pending.foreach(s => replica ! s)
-    	pending = Vector.empty[Snapshot]
+      pending.foreach(s => replica ! s)
+      pending = Vector.empty[Snapshot]
+      startResendScheduler
     }
     case Resend => {
-      acks.foreach( a => {
-    	  val replicate = a._2._2
-    	  val seq = a._1
-    	  replica ! Snapshot(replicate.key, replicate.valueOption, seq)
-      })
-      context.system.scheduler.scheduleOnce(100.milliseconds, self, Resend)
+      scheduledChecker = null
+      if (acks.size > 0) {
+        acks.foreach(a => {
+          val replicate = a._2._2
+          val seq = a._1
+          replica ! Snapshot(replicate.key, replicate.valueOption, seq)
+        })
+        startResendScheduler
+      }
     }
   }
 
-  
+  var scheduledChecker: Cancellable = null
 
+  def startResendScheduler =
+    if (scheduledChecker == null)
+      scheduledChecker = context.system.scheduler.scheduleOnce(100.milliseconds, self, Resend)
+
+  def stopResendScheduler =
+    if (scheduledChecker != null) {
+      scheduledChecker.cancel
+      scheduledChecker = null
+    }
 }
