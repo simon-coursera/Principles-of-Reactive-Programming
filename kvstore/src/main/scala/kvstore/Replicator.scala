@@ -76,7 +76,7 @@ class Replicator(val replica: ActorRef) extends Actor {
       startResendScheduler
     }
     case Resend => {
-      scheduledChecker = null
+      scheduledChecker = None
       if (acks.size > 0) {
         acks.foreach(a => {
           val replicate = a._2._2
@@ -88,15 +88,18 @@ class Replicator(val replica: ActorRef) extends Actor {
     }
   }
 
-  var scheduledChecker: Cancellable = null
+  var scheduledChecker: Option[Cancellable] = None
 
-  def startResendScheduler =
-    if (scheduledChecker == null)
-      scheduledChecker = context.system.scheduler.scheduleOnce(100.milliseconds, self, Resend)
-
-  def stopResendScheduler =
-    if (scheduledChecker != null) {
-      scheduledChecker.cancel
-      scheduledChecker = null
+  def startResendScheduler = scheduledChecker match {
+    case None => scheduledChecker = Some(context.system.scheduler.scheduleOnce(100.milliseconds, self, Resend))
+    case Some(_) =>
+  }
+  
+  def stopResendScheduler = scheduledChecker match {
+    case Some(scheduler) => {
+      scheduler.cancel
+      scheduledChecker = None
     }
+    case None =>
+  }
 }

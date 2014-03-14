@@ -87,20 +87,20 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
       if (replicas.size - 1 < secondaries.size) {
         //Handle replica has been removed case
         val removedReplicators = secondaries.filter(m => !replicas.contains(m._1)).map(m => m._2).toSet
-        
+
         //Wave ack message from removed replicators
-        replicateAcks = replicateAcks.map(a =>{
-        	val id = a._1
-        	val replicators = a._2.replicators.filter(r => !removedReplicators.contains(r))
-        	if(replicators.size == 0 && !persistAcks.contains(id)) {
-        	  a._2.receiver ! OperationAck(id)
-        	}
-        	(id -> ReplicatorsMessage(a._2.receiver, a._2.key, replicators, a._2.starttime))
+        replicateAcks = replicateAcks.map(a => {
+          val id = a._1
+          val replicators = a._2.replicators.filter(r => !removedReplicators.contains(r))
+          if (replicators.size == 0 && !persistAcks.contains(id)) {
+            a._2.receiver ! OperationAck(id)
+          }
+          (id -> ReplicatorsMessage(a._2.receiver, a._2.key, replicators, a._2.starttime))
         })
-        
+
         replicateAcks = replicateAcks.filter(a => a._2.replicators.size > 0)
         if (persistAcks.size == 0 && replicateAcks.size == 0) stopCheckerScheduler
-        
+
         removedReplicators.foreach(r => context.stop(r))
         secondaries = secondaries.filter(m => !removedReplicators.contains(m._2))
         replicators = secondaries.map(m => m._2).toSet
@@ -118,7 +118,7 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
       doPersist(key, None, id)
       startCheckerScheduler
     }
-    case Get(key: String, id: Long) => sender ! GetResult(key, GetValue(key), id)
+    case Get(key: String, id: Long) => sender ! GetResult(key, getValue(key), id)
     case Persisted(key: String, id: Long) => if (persistAcks.contains(id)) {
       val receiver = persistAcks(id).receiver
       persistAcks -= id
@@ -167,7 +167,7 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
 
   /* TODO Behavior for the replica role. */
   val replica: Receive = {
-    case Get(key: String, id: Long) => sender ! GetResult(key, GetValue(key), id)
+    case Get(key: String, id: Long) => sender ! GetResult(key, getValue(key), id)
     case Snapshot(key, valueOption, seq) => {
       if (seq == expected_seq) {
         valueOption match {
@@ -191,7 +191,7 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
     case ReplicateFailed(receiver: ActorRef, key: String, id: Long) => None
   }
 
-  def GetValue(key: String) = if (kv.contains(key)) Some(kv(key)) else None
+  def getValue(key: String) = if (kv.contains(key)) Some(kv(key)) else None
 
   def doPersist(key: String, valueOption: Option[String], id: Long) = {
     persistor ! Persist(key, valueOption, id)
@@ -199,21 +199,24 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   }
 
   val TIMEOUT_MILLIS = 1000
-  var scheduledChecker: Cancellable = null
+  var scheduledChecker: Option[Cancellable] = None
 
-  def startCheckerScheduler =
-    if (scheduledChecker == null)
-      scheduledChecker = context.system.scheduler.scheduleOnce(100.milliseconds, self, Check)
+  def startCheckerScheduler = scheduledChecker match {
+    case None => scheduledChecker = Some(context.system.scheduler.scheduleOnce(100.milliseconds, self, Check))
+    case Some(_) =>
+  }
 
-  def stopCheckerScheduler =
-    if (scheduledChecker != null) {
-      scheduledChecker.cancel
-      scheduledChecker = null
+  def stopCheckerScheduler = scheduledChecker match {
+    case Some(scheduler) => {
+      scheduler.cancel
+      scheduledChecker = None
     }
+    case None =>
+  }
 
   def doCheck = {
     val currentTime = System.currentTimeMillis
-    scheduledChecker = null
+    scheduledChecker = None
     //Persistent resend
     persistAcks.foreach(a => {
       if (currentTime - a._2.starttime >= TIMEOUT_MILLIS) self ! ReplicateFailed(a._2.receiver, a._2.key, a._1)
