@@ -27,6 +27,9 @@ object Replica {
   case class OperationFailed(id: Long) extends OperationReply
   case class GetResult(key: String, valueOption: Option[String], id: Long) extends OperationReply
 
+  case class PersistMessage(receiver: ActorRef, key: String, valueOption: Option[String], starttime: Long)
+  case class PersistFailed(receiver: ActorRef, key: String, id: Long)
+
   def props(arbiter: ActorRef, persistenceProps: Props): Props = Props(new Replica(arbiter, persistenceProps))
 }
 
@@ -39,41 +42,126 @@ class Replica(val arbiter: ActorRef, persistenceProps: Props) extends Actor {
   /*
    * The contents of this actor is just a suggestion, you can implement it in any way you like.
    */
-  
+
   var kv = Map.empty[String, String]
   // a map from secondary replicas to replicators
   var secondaries = Map.empty[ActorRef, ActorRef]
   // the current set of replicators
   var replicators = Set.empty[ActorRef]
 
-  var expected_seq = -1
-  
+  var expected_seq = 0L
+
   def receive = {
-    case JoinedPrimary   => context.become(leader)
+    case JoinedPrimary => context.become(leader)
     case JoinedSecondary => context.become(replica)
   }
-  
+
   arbiter ! Join
+
+  val persistor: ActorRef = context.actorOf(persistenceProps)
+  var persistAcks = Map.empty[Long, PersistMessage]
+  var replicateAcks = Map.empty[Long, Set[ActorRef]]
+
+  override val supervisorStrategy = OneForOneStrategy(maxNrOfRetries = 10, withinTimeRange = 1.minute) {
+    case _: Exception => Restart
+  }
+
+  context.system.scheduler.scheduleOnce(100.milliseconds, self, Resend)
 
   /* TODO Behavior for  the leader role. */
   val leader: Receive = {
+    case Replicas(replicas: Set[ActorRef]) => {
+    	replicas.foreach(replica =>{
+    		if(!secondaries.contains(replica)) {
+    		  val newReplicator = context.actorOf(Replicator.props(replica))
+    		  secondaries += (replica -> newReplicator)
+    		  replicators += newReplicator
+    		}
+    	})
+    }
     case Insert(key: String, value: String, id: Long) => {
       kv += key -> value
-      sender ! OperationAck(id)
+      doReplicate(key, Some(value), id)
+      doPersist(key, Some(value), id)
+      //sender ! OperationAck(id)
     }
     case Remove(key: String, id: Long) => {
       kv -= key
-      sender ! OperationAck(id)
+      doReplicate(key, None, id)
+      doPersist(key, None, id)
+      //sender ! OperationAck(id)
     }
     case Get(key: String, id: Long) => sender ! GetResult(key, GetValue(key), id)
-
+    case Persisted(key: String, id: Long) => if (persistAcks.contains(id)) {
+      persistAcks(id).receiver ! OperationAck(id)
+      persistAcks -= id
+    }
+    case Resend => doResend
+    case PersistFailed(receiver: ActorRef, key: String, id: Long) => {
+      receiver ! OperationFailed(id)
+    }
+    case Replicated(key: String, id: Long) => {
+      if(replicateAcks.contains(id)){
+    	  val remainingReplicators = replicateAcks(id) - sender
+    	  if (remainingReplicators.isEmpty)  replicateAcks -= id
+    	  else replicateAcks += (id -> remainingReplicators)
+    	  
+    	  //checkToConfirm(id)
+      }
+    }
+  }
+  
+  def doReplicate(key: String, valueOption: Option[String], id: Long) = {
+	  replicators.foreach(replicator => {
+		  replicator ! Replicate(key, valueOption, id)
+	  })
+	  replicateAcks += (id -> replicators)
   }
 
+  def checkToConfirm(id: Long, receiver:ActorRef) = if(!replicateAcks.contains(id) && !persistAcks.contains(id)) receiver ! OperationAck(id)
+    
+  
   /* TODO Behavior for the replica role. */
   val replica: Receive = {
     case Get(key: String, id: Long) => sender ! GetResult(key, GetValue(key), id)
-    case Snapshot(key, valueOption, seq) => sender ! SnapshotAck(key, seq)
+    case Snapshot(key, valueOption, seq) => {
+      if (seq == expected_seq) {
+        valueOption match {
+          case Some(value) => kv += key -> value
+          case None => kv -= key
+        }
+        doPersist(key, valueOption, seq)
+
+        expected_seq += 1
+      } else if (seq < expected_seq) {
+        sender ! SnapshotAck(key, seq)
+      } else None
+    }
+    case Persisted(key: String, id: Long) => if (persistAcks.contains(id)) {
+      persistAcks(id).receiver ! SnapshotAck(persistAcks(id).key, id)
+      persistAcks -= id
+    }
+    case Resend => doResend
+    case PersistFailed(receiver: ActorRef, key: String, id: Long) => None
   }
 
   def GetValue(key: String) = if (kv.contains(key)) Some(kv(key)) else None
+
+  def doPersist(key: String, valueOption: Option[String], id: Long) = {
+    persistor ! Persist(key, valueOption, id)
+    persistAcks += (id -> PersistMessage(sender, key, valueOption, System.currentTimeMillis))
+  }
+
+  def doResend = {
+    val currentTime = System.currentTimeMillis
+    persistAcks.foreach(a => {
+      if (currentTime - a._2.starttime >= 1000) self ! PersistFailed(a._2.receiver, a._2.key, a._1)
+      else persistor ! Persist(a._2.key, a._2.valueOption, a._1)
+    })
+
+    //Clean up long period persistent effort
+    persistAcks = persistAcks.filter(a => currentTime - a._2.starttime < 1000)
+
+    context.system.scheduler.scheduleOnce(100.milliseconds, self, Resend)
+  }
 }

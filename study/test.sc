@@ -4,11 +4,13 @@ import scala.util.Random
 object test {
   println("Welcome to the Scala worksheet")       //> Welcome to the Scala worksheet
 
-	var q = Queue.empty[Int]                  //> q  : scala.collection.immutable.Queue[Int] = Queue()
-	q :+= 1
-	q :+= 2
-	q :+= 3
-	for(e <-q) println(e)                     //> 1
-                                                  //| 2
-                                                  //| 3
+	var kv = Map.empty[String, String]        //> kv  : scala.collection.immutable.Map[String,String] = Map()
+	
+	kv += "1" -> "one"
+	kv += "1" -> "oneone"
+	kv += "2" -> "two"
+System.currentTimeMillis                          //> res0: Long = 1394790499308
+
+	val s = Set(1,2,3)                        //> s  : scala.collection.immutable.Set[Int] = Set(1, 2, 3)
+	s - 1                                     //> res1: scala.collection.immutable.Set[Int] = Set(2, 3)
 }
